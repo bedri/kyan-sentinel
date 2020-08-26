@@ -28,7 +28,7 @@ class Masternode():
         # mn_full_out = mn_full_out.strip()
 
         try:
-            # TODO remove this after Dash Core 0.14 is fully deployed to mainnet
+            # TODO remove this after Kyan Core 0.14 is fully deployed to mainnet
             #  (only the code in the except path should stay)
             (status, protocol, address, lastseen, activeseconds, lastpaid,
                 lastpaidblock, ip_port) = mn_full_out.split()

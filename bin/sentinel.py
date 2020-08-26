@@ -5,7 +5,7 @@ sys.path.append(os.path.normpath(os.path.join(os.path.dirname(__file__), '../lib
 import init
 import config
 import misc
-from dashd import DashDaemon
+from kyand import KyanDaemon
 from models import Superblock, Proposal, GovernanceObject
 from models import VoteSignals, VoteOutcomes, Transient
 import socket
@@ -19,21 +19,21 @@ from scheduler import Scheduler
 import argparse
 
 
-# sync dashd gobject list with our local relational DB backend
-def perform_dashd_object_sync(dashd):
-    GovernanceObject.sync(dashd)
+# sync kyand gobject list with our local relational DB backend
+def perform_kyand_object_sync(kyand):
+    GovernanceObject.sync(kyand)
 
 
-def prune_expired_proposals(dashd):
+def prune_expired_proposals(kyand):
     # vote delete for old proposals
-    for proposal in Proposal.expired(dashd.superblockcycle()):
-        proposal.vote(dashd, VoteSignals.delete, VoteOutcomes.yes)
+    for proposal in Proposal.expired(kyand.superblockcycle()):
+        proposal.vote(kyand, VoteSignals.delete, VoteOutcomes.yes)
 
 
-def attempt_superblock_creation(dashd):
-    import dashlib
+def attempt_superblock_creation(kyand):
+    import kyanlib
 
-    if not dashd.is_masternode():
+    if not kyand.is_masternode():
         print("We are not a Masternode... can't submit superblocks!")
         return
 
@@ -44,7 +44,7 @@ def attempt_superblock_creation(dashd):
     # has this masternode voted on *any* superblocks at the given event_block_height?
     # have we voted FUNDING=YES for a superblock for this specific event_block_height?
 
-    event_block_height = dashd.next_superblock_height()
+    event_block_height = kyand.next_superblock_height()
 
     if Superblock.is_voted_funding(event_block_height):
         # printdbg("ALREADY VOTED! 'til next time!")
@@ -52,20 +52,20 @@ def attempt_superblock_creation(dashd):
         # vote down any new SBs because we've already chosen a winner
         for sb in Superblock.at_height(event_block_height):
             if not sb.voted_on(signal=VoteSignals.funding):
-                sb.vote(dashd, VoteSignals.funding, VoteOutcomes.no)
+                sb.vote(kyand, VoteSignals.funding, VoteOutcomes.no)
 
         # now return, we're done
         return
 
-    if not dashd.is_govobj_maturity_phase():
+    if not kyand.is_govobj_maturity_phase():
         printdbg("Not in maturity phase yet -- will not attempt Superblock")
         return
 
-    proposals = Proposal.approved_and_ranked(proposal_quorum=dashd.governance_quorum(), next_superblock_max_budget=dashd.next_superblock_max_budget())
-    budget_max = dashd.get_superblock_budget_allocation(event_block_height)
-    sb_epoch_time = dashd.block_height_to_epoch(event_block_height)
+    proposals = Proposal.approved_and_ranked(proposal_quorum=kyand.governance_quorum(), next_superblock_max_budget=kyand.next_superblock_max_budget())
+    budget_max = kyand.get_superblock_budget_allocation(event_block_height)
+    sb_epoch_time = kyand.block_height_to_epoch(event_block_height)
 
-    sb = dashlib.create_superblock(proposals, event_block_height, budget_max, sb_epoch_time)
+    sb = kyanlib.create_superblock(proposals, event_block_height, budget_max, sb_epoch_time)
     if not sb:
         printdbg("No superblock created, sorry. Returning.")
         return
@@ -73,12 +73,12 @@ def attempt_superblock_creation(dashd):
     # find the deterministic SB w/highest object_hash in the DB
     dbrec = Superblock.find_highest_deterministic(sb.hex_hash())
     if dbrec:
-        dbrec.vote(dashd, VoteSignals.funding, VoteOutcomes.yes)
+        dbrec.vote(kyand, VoteSignals.funding, VoteOutcomes.yes)
 
         # any other blocks which match the sb_hash are duplicates, delete them
         for sb in Superblock.select().where(Superblock.sb_hash == sb.hex_hash()):
             if not sb.voted_on(signal=VoteSignals.funding):
-                sb.vote(dashd, VoteSignals.delete, VoteOutcomes.yes)
+                sb.vote(kyand, VoteSignals.delete, VoteOutcomes.yes)
 
         printdbg("VOTED FUNDING FOR SB! We're done here 'til next superblock cycle.")
         return
@@ -86,24 +86,24 @@ def attempt_superblock_creation(dashd):
         printdbg("The correct superblock wasn't found on the network...")
 
     # if we are the elected masternode...
-    if (dashd.we_are_the_winner()):
+    if (kyand.we_are_the_winner()):
         printdbg("we are the winner! Submit SB to network")
-        sb.submit(dashd)
+        sb.submit(kyand)
 
 
-def check_object_validity(dashd):
+def check_object_validity(kyand):
     # vote (in)valid objects
     for gov_class in [Proposal, Superblock]:
         for obj in gov_class.select():
-            obj.vote_validity(dashd)
+            obj.vote_validity(kyand)
 
 
-def is_dashd_port_open(dashd):
+def is_kyand_port_open(kyand):
     # test socket open before beginning, display instructive message to MN
     # operators if it's not
     port_open = False
     try:
-        info = dashd.rpc_command('getgovernanceinfo')
+        info = kyand.rpc_command('getgovernanceinfo')
         port_open = True
     except (socket.error, JSONRPCException) as e:
         print("%s" % e)
@@ -112,26 +112,26 @@ def is_dashd_port_open(dashd):
 
 
 def main():
-    dashd = DashDaemon.from_dash_conf(config.dash_conf)
+    kyand = KyanDaemon.from_kyan_conf(config.kyan_conf)
     options = process_args()
 
     # print version and return if "--version" is an argument
     if options.version:
-        print("Dash Sentinel v%s" % config.sentinel_version)
+        print("Kyan Sentinel v%s" % config.sentinel_version)
         return
 
-    # check dashd connectivity
-    if not is_dashd_port_open(dashd):
-        print("Cannot connect to dashd. Please ensure dashd is running and the JSONRPC port is open to Sentinel.")
+    # check kyand connectivity
+    if not is_kyand_port_open(kyand):
+        print("Cannot connect to kyand. Please ensure kyand is running and the JSONRPC port is open to Sentinel.")
         return
 
-    # check dashd sync
-    if not dashd.is_synced():
-        print("dashd not synced with network! Awaiting full sync before running Sentinel.")
+    # check kyand sync
+    if not kyand.is_synced():
+        print("kyand not synced with network! Awaiting full sync before running Sentinel.")
         return
 
     # ensure valid masternode
-    if not dashd.is_masternode():
+    if not kyand.is_masternode():
         print("Invalid Masternode Status, cannot continue.")
         return
 
@@ -163,16 +163,16 @@ def main():
     # ========================================================================
     #
     # load "gobject list" rpc command data, sync objects into internal database
-    perform_dashd_object_sync(dashd)
+    perform_kyand_object_sync(kyand)
 
     # auto vote network objects as valid/invalid
-    # check_object_validity(dashd)
+    # check_object_validity(kyand)
 
     # vote to delete expired proposals
-    prune_expired_proposals(dashd)
+    prune_expired_proposals(kyand)
 
     # create a Superblock if necessary
-    attempt_superblock_creation(dashd)
+    attempt_superblock_creation(kyand)
 
     # schedule the next run
     Scheduler.schedule_next_run()
@@ -196,7 +196,7 @@ def process_args():
                         dest='bypass')
     parser.add_argument('-v', '--version',
                         action='store_true',
-                        help='Print the version (Dash Sentinel vX.X.X) and exit')
+                        help='Print the version (Kyan Sentinel vX.X.X) and exit')
 
     args = parser.parse_args()
 
