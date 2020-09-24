@@ -16,12 +16,12 @@ def test_kyand():
     config_text = KyanConfig.slurp_config_file(config.kyan_conf)
     network = 'mainnet'
     is_testnet = False
-    genesis_hash = u'00000ffd590b1485b3caadc19b22e6379c733355108f107a430458cdf3407ab6'
+    genesis_hash = u'00000551e93eb0749d40dfafd54b092e78d6612b47bd40de8d099818f65f53c1'
     for line in config_text.split("\n"):
         if line.startswith('testnet=1'):
             network = 'testnet'
             is_testnet = True
-            genesis_hash = u'00000bafbc94add76cb75e2ec92894837288a481e5c005f6563d91623bf8bc2c'
+            genesis_hash = u'000000313693c8b25165dbdc8498b8c0084fa24ffea6a02765733700fbcf7467'
 
     creds = KyanConfig.get_rpc_creds(config_text, network)
     kyand = KyanDaemon(**creds)
@@ -29,7 +29,7 @@ def test_kyand():
 
     assert hasattr(kyand, 'rpc_connection')
 
-    # Kyan testnet block 0 hash == 00000bafbc94add76cb75e2ec92894837288a481e5c005f6563d91623bf8bc2c
+    # Kyan testnet block 0 hash == 000000313693c8b25165dbdc8498b8c0084fa24ffea6a02765733700fbcf7467
     # test commands without arguments
     info = kyand.rpc_command('getinfo')
     info_keys = [
